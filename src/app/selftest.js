@@ -50,7 +50,8 @@ export async function runSelfTest(app) {
 
   app.setMode('2d');
   app.fitWorld();
-  app.camera.goal = null;
+  // fitWorld animates; settle it so screen coordinates below are predictable.
+  for (let i = 0; i < 120 && app.camera.animating; i++) app.camera.update(16);
   app.draw();
   check('2D draw completed without throwing', true);
 
@@ -180,11 +181,13 @@ export async function runSelfTest(app) {
 
   /* ---------------------------------------------------------- marquee */
 
+  app.setTool(TOOL.select);
   app.selection.clear();
   pointer(app, 'pointerdown', 5, 5, { shiftKey: true });
-  for (let i = 0; i < 6; i++) pointer(app, 'pointermove', 60 * (i + 1), 50 * (i + 1), { shiftKey: true });
-  pointer(app, 'pointerup', 360, 300, { shiftKey: true });
-  check('marquee selected several objects', app.selection.size > 5, app.selection.size);
+  for (let i = 0; i < 8; i++) pointer(app, 'pointermove', 45 * (i + 1), 38 * (i + 1), { shiftKey: true });
+  pointer(app, 'pointerup', 380, 320, { shiftKey: true });
+  const inBox = world.queryIds({ minX: -1e5, minY: -1e5, maxX: 1e5, maxY: 1e5 });
+  check('marquee selected several objects', app.selection.size > 5, `${app.selection.size} of ${inBox.size} indexed`);
   const selCount = app.selection.size;
   const totalBefore = world.stats();
   app.deleteSelection();

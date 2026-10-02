@@ -1021,7 +1021,7 @@ function pickDistance(world, type, obj, w, tolerance) {
   if (type === 'roads') {
     const [a, b] = world.roadNodes(obj);
     if (!a || !b) return null;
-    return distToSeg(w.x, w.y, a.x, a.y, b.x, b.y);
+    return distToSeg(w.x, w.y, a.x, a.y, b.x, b.y).d;
   }
   return null;
 }
