@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Virtual World Editor</title>
+    <link rel="stylesheet" href="styles/app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <span class="brand-name">Virtual World Editor</span>
+        </div>
+        <div class="file">
+          <input id="world-name" type="text" spellcheck="false" aria-label="World name" />
+          <span id="save-state" class="save-state">saved</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="top-actions">
+          <button id="btn-new" class="btn" title="New world">New</button>
+          <button id="btn-open" class="btn" title="Open a .vwe.json file">Open</button>
+          <button id="btn-save" class="btn" title="Save (Ctrl+S)">Save</button>
+          <button id="btn-save-as" class="btn" title="Save as">Save as</button>
+          <span class="divider"></span>
+          <button id="btn-undo" class="btn icon" title="Undo (Ctrl+Z)" disabled>&#8630;</button>
+          <button id="btn-redo" class="btn icon" title="Redo (Ctrl+Shift+Z)" disabled>&#8631;</button>
+          <span class="divider"></span>
+          <button id="btn-osm" class="btn" title="Import roads from OpenStreetMap">Import OSM</button>
+        </div>
+      </header>
+
+      <div id="toolbar" role="toolbar" aria-label="Tools">
+        <button class="tool active" data-tool="select" title="Select and move (V)"><span>&#11122;</span><em>Select</em></button>
+        <button class="tool" data-tool="road" title="Draw a road (R)"><span>&#9649;</span><em>Road</em></button>
+        <button class="tool" data-tool="junction" title="Place a junction node (J)"><span>&#9679;</span><em>Junction</em></button>
+        <button class="tool" data-tool="building" title="Draw a building (B)"><span>&#9632;</span><em>Building</em></button>
+        <button class="tool" data-tool="surface" title="Draw a surface patch (G)"><span>&#9635;</span><em>Surface</em></button>
+        <button class="tool" data-tool="prop" title="Place an object (O)"><span>&#10047;</span><em>Object</em></button>
+        <button class="tool" data-tool="marking" title="Add a lane marking (M)"><span>&#8213;</span><em>Marking</em></button>
+        <button class="tool" data-tool="measure" title="Measure distance (D)"><span>&#8596;</span><em>Measure</em></button>
+        <span class="divider"></span>
+        <div id="tool-options"></div>
+      </div>
+
+      <main id="stage">
+        <canvas id="view"></canvas>
+        <div id="view-switch" class="seg">
+          <button data-mode="2d" class="active">2D</button>
+          <button data-mode="3d">3D</button>
+        </div>
+        <div id="view-tools">
+          <button id="btn-zoom-in" title="Zoom in">+</button>
+          <button id="btn-zoom-out" title="Zoom out">&minus;</button>
+          <button id="btn-fit" title="Fit world to view">Fit</button>
+          <button id="btn-topdown" title="Top-down view">Top</button>
+        </div>
+        <div id="scalebar"><div class="bar"></div><span class="label">10 m</span></div>
+        <div id="status-hint" class="hint"></div>
+        <div id="minimap-wrap" title="Click or drag to navigate">
+          <canvas id="minimap"></canvas>
+        </div>
+        <div id="perf" class="perf"></div>
+      </main>
+
+      <aside id="sidebar">
+        <nav id="tabs">
+          <button class="tab active" data-tab="inspector">Inspector</button>
+          <button class="tab" data-tab="layers">Layers</button>
+          <button class="tab" data-tab="world">World</button>
+        </nav>
+        <div id="tab-inspector" class="tab-body"></div>
+        <div id="tab-layers" class="tab-body hidden"></div>
+        <div id="tab-world" class="tab-body hidden"></div>
+      </aside>
+
+      <footer id="statusbar">
+        <span id="status-selection">No selection</span>
+        <span id="status-cursor">0, 0</span>
+        <span class="spacer"></span>
+        <label class="field">
+          <span>Style</span>
+          <select id="style-select">
+            <option value="day">Day</option>
+            <option value="dusk">Dusk</option>
+            <option value="night">Night</option>
+          </select>
+        </label>
+        <span id="status-counts"></span>
+      </footer>
+    </div>
+
+    <div id="modal-root" class="hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal" role="dialog" aria-modal="true">
+        <header><h2 id="modal-title"></h2><button id="modal-close" class="btn icon">&#10005;</button></header>
+        <div id="modal-body"></div>
+        <footer id="modal-footer"></footer>
+      </div>
+    </div>
+
+    <div id="toasts"></div>
+    <input id="file-input" type="file" accept=".json,.vwe,.vwe.json,application/json" hidden />
+
+    <script>
+      // Runs before any module so a module-level failure (bad import, syntax error)
+      // is still visible instead of leaving a blank page.
+      window.__vweProblems = [];
+      function __vwePublish() {
+        var old = document.getElementById('bootlog');
+        if (old) old.remove();
+        var s = document.createElement('script');
+        s.type = 'application/json';
+        s.id = 'bootlog';
+        s.textContent = JSON.stringify(window.__vweProblems);
+        document.documentElement.appendChild(s);
+      }
+      function __vweFail(what, detail) {
+        window.__vweProblems.push(what + ': ' + detail);
+        document.documentElement.dataset.errors = String(window.__vweProblems.length);
+        console.error('[vwe] ' + what, detail);
+        __vwePublish();
+      }
+      window.addEventListener('error', (ev) => {
+        if (ev.target !== window) __vweFail('resource', ev.target.src || ev.target.href || 'unknown');
+      }, true);
+      window.addEventListener('unhandledrejection', (ev) => __vweFail('promise', ev.reason));
+      __vwePublish();
+    </script>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

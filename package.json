@@ -1,0 +1,15 @@
+{
+  "name": "virtual-world-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-based 2D/3D virtual world editor and driving simulator. Plain JavaScript, no external libraries.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "python3 -m http.server 8080",
+    "test": "node tools/smoke.mjs && node tools/functional.mjs && node tools/render3d.mjs",
+    "test:smoke": "node tools/smoke.mjs",
+    "test:functional": "node tools/functional.mjs",
+    "test:render3d": "node tools/render3d.mjs"
+  }
+}
