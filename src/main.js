@@ -753,7 +753,7 @@ class App {
 
   zoomStep(dir) {
     if (this.mode === '3d') this.camera3d.zoomBy(dir > 0 ? 0.85 : 1 / 0.85);
-    else this.camera.stepZoom(dir, this.camera.width / 2, this.camera.height / 2);
+    else this.camera.stepZoom(dir, { x: this.camera.width / 2, y: this.camera.height / 2 });
     this.requestDraw();
   }
 

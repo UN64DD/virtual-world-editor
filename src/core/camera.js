@@ -99,7 +99,18 @@ export class Camera2D {
     this.zoomAt(sx, sy, clamp(z, this.minZoom, this.maxZoom) / this.zoom);
   }
 
-  stepZoom(direction, anchor) {
+  stepZoom(direction, anchor, anchorY) {
+    let sx, sy;
+    if (anchor && typeof anchor === 'object' && ('x' in anchor || 'y' in anchor)) {
+      sx = anchor.x ?? this.width / 2;
+      sy = anchor.y ?? this.height / 2;
+    } else if (Number.isFinite(anchor) && Number.isFinite(anchorY)) {
+      sx = anchor;
+      sy = anchorY;
+    } else {
+      sx = this.width / 2;
+      sy = this.height / 2;
+    }
     const z = this.zoom;
     let target = z;
     if (direction > 0) {
@@ -108,7 +119,7 @@ export class Camera2D {
       const lower = ZOOM_LIMITS.filter((v) => v < z * 0.999);
       target = lower.length ? lower[lower.length - 1] : this.minZoom;
     }
-    this.animateZoom(target, anchor, 180);
+    this.animateZoom(target, { x: sx, y: sy }, 180);
   }
 
   animateTo(x, y, zoom, duration = 320) {
