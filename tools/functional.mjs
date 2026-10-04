@@ -283,5 +283,62 @@ const json = world.toJSON();
 const reloaded = (await import('../src/model/world.js')).World.fromJSON(json);
 check('world round-trips through JSON', reloaded.data.roads.length === world.data.roads.length && reloaded.data.buildings.length === world.data.buildings.length);
 
+/* --------------------------------------------------------- driving sim */
+{
+  const { createDemoWorld } = await import('../src/model/demo.js');
+  const { DriveSim, DRIVE_STATE } = await import('../src/model/driver.js');
+  const { makeVehicle } = await import('../src/model/schema.js');
+
+  const dw = createDemoWorld();
+  const dnet = new RoadNetwork(dw);
+  dnet.ensure();
+  const lanes = [...dnet.lanes.values()].filter((l) => l.drivable && l.successors.length);
+  check('demo town has lanes to drive on', lanes.length > 10, `got ${lanes.length}`);
+
+  const start = dnet.pointAtS(lanes[0], 6);
+  const car = dw.addVehicle(makeVehicle('car', start.x, start.y, { yaw: start.heading }));
+  check('vehicle is stored in the world', dw.data.vehicles.length === 1 && dw.vehicleById(car.id) != null);
+
+  const drive = new DriveSim(dw, dnet);
+  drive.sync();
+  drive.start();
+  const agent = drive.agentFor(car.id);
+  check('spawn puts the agent on a lane', !!agent && agent.lane != null, agent ? agent.laneId : 'none');
+  check('spawn is autonomous by default', !!agent && agent.laneId);
+
+  for (let i = 0; i < 30 * 60; i++) drive.update(1000 / 30);
+  check('car covers ground in a minute', agent.distance > 20, `${agent.distance.toFixed(1)} m`);
+  check('car stays finite', Number.isFinite(agent.x) && Number.isFinite(agent.y) && Number.isFinite(agent.yaw));
+  check('car keeps to the road', (dnet.projectOnLane(agent.lane, agent.x, agent.y)?.distance ?? 99) < 12,
+    `${(dnet.projectOnLane(agent.lane, agent.x, agent.y)?.distance ?? -1).toFixed(1)} m off`);
+  check('car hands over to new lanes', drive.agents.get(car.id).laneId !== undefined);
+  check('telemetry has a plan', !!agent.plan && agent.plan.pts.length > 2);
+  check('speed is capped by the road', agent.speed <= (agent.lane.speedLimit / 3.6) + 0.01, `${(agent.speed * 3.6).toFixed(0)} kph on ${agent.lane.speedLimit}`);
+
+  const stats = drive.stats();
+  check('stats count the fleet', stats.vehicles === 1 && stats.driving === 1 && stats.distance > 0, JSON.stringify(stats));
+  const report = drive.report();
+  check('report lists the fleet', Array.isArray(report) && report.length === 1 && report[0].speed_kph >= 0 && !!report[0].state, JSON.stringify(report).slice(0, 140));
+
+  // A parked vehicle is left alone.
+  dw.addVehicle(makeVehicle('van', start.x + 40, start.y, { yaw: start.heading, autonomous: false }));
+  drive.sync();
+  check('parked vehicles get no agent', drive.agents.size === 1 && drive.agentFor(dw.data.vehicles[1].id) === null);
+
+  // Deleting the vehicle retires its agent.
+  const firstId = car.id;
+  dw.remove(firstId);
+  drive.sync();
+  check('deleted vehicles drop their agent', drive.agents.size === 0 && drive.agentFor(firstId) === null, `agents ${drive.agents.size}`);
+  check('state constants are exported', !!DRIVE_STATE.driving && !!DRIVE_STATE.offroad);
+
+  // A bus is much slower and wider than a car.
+  const busStart = dnet.pointAtS(lanes[3], 6);
+  const bus = dw.addVehicle(makeVehicle('bus', busStart.x, busStart.y, { yaw: busStart.heading }));
+  drive.sync();
+  const busAgent = drive.agentFor(bus.id);
+  check('bus agent reads its own dimensions', busAgent.length > agent.length && busAgent.width < 3, `${busAgent.length} x ${busAgent.width}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

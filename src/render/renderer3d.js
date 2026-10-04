@@ -66,7 +66,7 @@ export class Renderer3D {
     camera.recompute();
     const box = camera.visibleBox();
     this.scene.ensureFor(box, opts.budgetMs ?? 6);
-    const prims = this.scene.gather(box);
+    const prims = opts.dynamic?.length ? this.scene.gather(box).concat(opts.dynamic) : this.scene.gather(box);
     const drawList = this.buildDrawList(prims, camera);
     this.paint(drawList, camera);
     if (this._selected.size || this._hovered) this.paintOutlines(drawList, camera);
@@ -369,8 +369,9 @@ export class Renderer3D {
     );
   }
 
-  pickAt(camera, sx, sy) {
-    const list = this.buildDrawList(this.scene.gather(camera.visibleBox()), camera);
+  pickAt(camera, sx, sy, dynamic = null) {
+    const prims = this.scene.gather(camera.visibleBox());
+    const list = this.buildDrawList(dynamic?.length ? prims.concat(dynamic) : prims, camera);
     for (let i = list.length - 1; i >= 0; i--) {
       const item = list[i];
       if (item.kind !== 'poly') continue;

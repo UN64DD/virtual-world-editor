@@ -67,6 +67,8 @@ const modules = [
   '../src/model/geo.js',
   '../src/model/world.js',
   '../src/model/network.js',
+  '../src/model/driver.js',
+  '../src/model/demo.js',
   '../src/model/paint.js',
   '../src/snap.js',
   '../src/render/theme.js',

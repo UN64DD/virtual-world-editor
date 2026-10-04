@@ -39,6 +39,7 @@
         <button class="tool" data-tool="surface" title="Draw a surface patch (G)"><span>&#9635;</span><em>Surface</em></button>
         <button class="tool" data-tool="prop" title="Place an object (O)"><span>&#10047;</span><em>Object</em></button>
         <button class="tool" data-tool="marking" title="Add a lane marking (M)"><span>&#8213;</span><em>Marking</em></button>
+        <button class="tool" data-tool="vehicle" title="Place a vehicle (C)"><span>&#9673;</span><em>Vehicle</em></button>
         <button class="tool" data-tool="measure" title="Measure distance (D)"><span>&#8596;</span><em>Measure</em></button>
         <span class="divider"></span>
         <div id="tool-options"></div>
@@ -79,6 +80,8 @@
         <span id="status-selection">No selection</span>
         <span id="status-cursor">0, 0</span>
         <span class="spacer"></span>
+        <button id="traffic-toggle" class="ghost" type="button" title="Start or pause the traffic simulation (P)">Drive</button>
+        <span id="traffic-status" class="traffic-status">Traffic paused</span>
         <label class="field">
           <span>Style</span>
           <select id="style-select">

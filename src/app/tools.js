@@ -7,15 +7,20 @@ import {
   ROAD_CLASS_ORDER,
   ROAD_CLASSES,
   SURFACE_KIND_ORDER,
+  VEHICLE_PRESET_ORDER,
   makeBuilding,
   makeMarking,
   makeNode,
   makeProp,
   makeRoad,
   makeSurface,
+  makeVehicle,
   roadClassInfo,
 } from '../model/schema.js';
 import { dist } from '../core/util.js';
+
+/** How far a dropped vehicle may sit from a lane centreline and still snap to it. */
+const VEHICLE_DROP_SNAP = 8;
 
 export const TOOL = {
   select: 'select',
@@ -25,6 +30,7 @@ export const TOOL = {
   surface: 'surface',
   prop: 'prop',
   marking: 'marking',
+  vehicle: 'vehicle',
   measure: 'measure',
 };
 
@@ -42,6 +48,8 @@ export function defaultToolOptions(tool) {
       return { kind: 'tree' };
     case TOOL.marking:
       return { kind: 'solid', role: 'divider', side: 'left', span: 40 };
+    case TOOL.vehicle:
+      return { kind: 'car', autonomous: true };
     default:
       return {};
   }
@@ -55,6 +63,7 @@ const HINTS = {
   surface: 'Click corners to outline a ground patch, double-click to close.',
   prop: 'Click to place an object. <span class="kbd">R</span> while held rotates.',
   marking: 'Click a lane to add a marking to it.',
+  vehicle: 'Click to drop a vehicle onto the nearest lane. It drives itself.',
   measure: 'Click two points to measure. <span class="kbd">Esc</span> to clear.',
 };
 
@@ -156,6 +165,9 @@ export class ToolController {
         break;
       case TOOL.marking:
         this.addMarking(p);
+        break;
+      case TOOL.vehicle:
+        this.addVehicle(p);
         break;
       case TOOL.measure:
         this.clickMeasure(p);
@@ -388,6 +400,32 @@ export class ToolController {
     app.requestDraw();
   }
 
+  /**
+   * Drop a vehicle onto whatever is nearest, so a click anywhere sensible lands
+   * it on the road rather than in a field.
+   */
+  addVehicle(p) {
+    const app = this.app;
+    // Snap onto the road the user clicked near; only drop them in the grass
+    // when nothing is close enough for the simulation to pick up.
+    const hit = app.network?.nearestLane(p.x, p.y);
+    const onRoad = hit && hit.distance <= VEHICLE_DROP_SNAP;
+    const drop = onRoad ? { x: hit.x, y: hit.y, yaw: hit.heading } : { x: p.x, y: p.y, yaw: hit?.heading || 0 };
+    let id = null;
+    app.history.run('Add vehicle', () => {
+      id = app.world.add('vehicles', makeVehicle(this.options.kind, drop.x, drop.y, {
+        yaw: drop.yaw,
+        autonomous: this.options.autonomous !== false,
+      })).id;
+    });
+    app.selection.clear();
+    if (id) app.selection.add(id);
+    app.afterEdit();
+    app.refreshInspector();
+    app.drive?.sync();
+    if (!onRoad) app.toast('No road there: the vehicle will drive to the nearest one', 'warn');
+  }
+
   addProp(p) {
     const app = this.app;
     let id = null;
@@ -519,6 +557,11 @@ export function toolOptionSpec(tool) {
       return [{ key: 'kind', label: 'Kind', type: 'select', options: SURFACE_KIND_ORDER }];
     case TOOL.prop:
       return [{ key: 'kind', label: 'Kind', type: 'palette', options: PROP_KIND_ORDER }];
+    case TOOL.vehicle:
+      return [
+        { key: 'kind', label: 'Kind', type: 'select', options: VEHICLE_PRESET_ORDER },
+        { key: 'autonomous', label: 'Autonomous', type: 'checkbox' },
+      ];
     case TOOL.marking:
       return [
         { key: 'kind', label: 'Marking', type: 'select', options: Object.keys(MARKING_KINDS) },

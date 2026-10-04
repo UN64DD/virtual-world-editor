@@ -55,6 +55,7 @@ export class Renderer2D {
     if (view.showLabels !== false) this.drawLabels(view, viewBox);
     if (view.showRoute) this.drawRoute(view);
     if (view.showSensors) this.drawSensors(view);
+    this.drawTraffic(view);
     this.drawVehicle(view);
     if (view.overlay) this.drawToolOverlay(view);
     if (view.selection && view.selection.size) this.drawSelection(view);
@@ -684,6 +685,58 @@ export class Renderer2D {
       ctx.arc(p.x, p.y, hit.rayHit ? 2.4 : 1.6, 0, Math.PI * 2);
       ctx.fillStyle = hit.rayHit ? 'rgba(255,120,90,0.9)' : 'rgba(124,255,155,0.75)';
       ctx.fill();
+    }
+  }
+
+  /**
+   * The driven fleet. Bodies come straight off the simulation, so the outline
+   * is the one the inspector quotes and a stopped car is dimmed rather than
+   * repainted: colour belongs to the vehicle, state to the readout.
+   */
+  drawTraffic(view) {
+    const agents = view.agents;
+    if (!agents || !agents.length) return;
+    const { camera } = view;
+    const ctx = this.ctx;
+    const box = camera.visibleWorldBox(20);
+    for (const a of agents) {
+      if (a.x < box.minX || a.x > box.maxX || a.y < box.minY || a.y > box.maxY) continue;
+      const poly = rectPoly(a.x, a.y, a.length, a.width, a.yaw);
+      ctx.save();
+      ctx.translate(Math.cos(a.yaw + Math.PI / 2) * 0.35, Math.sin(a.yaw + Math.PI / 2) * 0.35);
+      ctx.beginPath();
+      this.tracePoly(ctx, poly, camera);
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fill();
+      ctx.restore();
+      ctx.beginPath();
+      this.tracePoly(ctx, poly, camera);
+      ctx.fillStyle = a.color || '#e8563f';
+      ctx.globalAlpha = a.speed < 0.2 ? 0.72 : 1;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#10161d';
+      ctx.stroke();
+      // Heading tick, so a stopped car still shows which way it faces.
+      const nose = camera.toScreen(a.x + Math.cos(a.yaw) * a.length * 0.32, a.y + Math.sin(a.yaw) * a.length * 0.32);
+      const back = camera.toScreen(a.x - Math.cos(a.yaw) * a.length * 0.32, a.y - Math.sin(a.yaw) * a.length * 0.32);
+      ctx.beginPath();
+      ctx.moveTo(back.x, back.y);
+      ctx.lineTo(nose.x, nose.y);
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      if (a.state && a.state !== 'driving') {
+        const dot = camera.toScreen(a.x, a.y - a.width * 0.5 - 1.2);
+        ctx.beginPath();
+        ctx.arc(dot.x, dot.y, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = a.state === 'offroad' ? '#ff6b5e' : '#ffd166';
+        ctx.fill();
+        ctx.strokeStyle = '#10161d';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     }
   }
 

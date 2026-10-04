@@ -7,6 +7,7 @@ export class Minimap {
     this.padding = 10;
     this.world = null;
     this.getViewBox = opts.getViewBox || (() => null);
+    this.getAgents = opts.getAgents || (() => null);
     this.onJump = opts.onJump || (() => {});
     this._box = { minX: 0, minY: 0, maxX: 1, maxY: 1 };
     this._bound = false;
@@ -118,6 +119,18 @@ export class Minimap {
       if (p.kind !== 'tree' && p.kind !== 'pine') continue;
       const p2 = this.project(p.x, p.y);
       ctx.fillRect(p2.x - 0.7, p2.y - 0.7, 1.4, 1.4);
+    }
+
+    // Driven vehicles, so the whole map shows where the traffic has got to.
+    const agents = this.getAgents();
+    if (agents && agents.length) {
+      for (const a of agents) {
+        const p = this.project(a.x, a.y);
+        ctx.fillStyle = a.speed < 0.2 ? '#ffd166' : a.color || '#e8563f';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     if (view) {

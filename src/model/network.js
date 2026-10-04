@@ -292,12 +292,31 @@ export class RoadNetwork {
     const inH = this.headingAt(inLane, inLane.center.length - 1);
     const outH = this.headingAt(outLane, 0);
     const d = Math.hypot(s.x - e.x, s.y - e.y);
-    const c = clamp(d * 0.55, 1.5, 14);
-    const c1 = { x: e.x + inH.x * c, y: e.y + inH.y * c };
-    const c2 = { x: s.x - outH.x * c, y: s.y - outH.y * c };
-    const samples = turn === 'through' && d < 2.5 ? 2 : 10;
+    // Round the corner off at the point where the two lane centre lines cross.
+    // Driving the curve through that point keeps it inside the triangle the lane
+    // ends and the corner make up, which a pair of tangent handles does not:
+    // when a lane hands over close to where the previous one ended, equal
+    // handles reach past the join and the curve doubles back on itself.
+    const den = inH.x * outH.y - inH.y * outH.x;
+    let ctrl = { x: (e.x + s.x) / 2, y: (e.y + s.y) / 2 };
+    if (Math.abs(den) > 1e-6) {
+      const t = ((s.x - e.x) * outH.y - (s.y - e.y) * outH.x) / den;
+      ctrl = { x: e.x + inH.x * t, y: e.y + inH.y * t };
+      // A shallow join puts that crossing a long way off. Keep the bulge in
+      // proportion to the gap so the curve stays near the two lanes.
+      const off = Math.hypot(ctrl.x - (e.x + s.x) / 2, ctrl.y - (e.y + s.y) / 2);
+      if (off > d * 0.5) ctrl = { x: e.x + (ctrl.x - e.x) * ((d * 0.5) / off), y: e.y + (ctrl.y - e.y) * ((d * 0.5) / off) };
+    }
+    const samples = clamp(Math.ceil(d / 1.5), 2, 20);
     const pts = [];
-    for (let i = 0; i <= samples; i++) pts.push(bezierPoint(e, c1, c2, s, i / samples));
+    for (let i = 0; i <= samples; i++) {
+      const t = i / samples;
+      const u = 1 - t;
+      pts.push({
+        x: u * u * e.x + 2 * u * t * ctrl.x + t * t * s.x,
+        y: u * u * e.y + 2 * u * t * ctrl.y + t * t * s.y,
+      });
+    }
     return pts;
   }
 

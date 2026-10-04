@@ -6,6 +6,7 @@ import { Camera3D } from './render/camera3d.js';
 import { Renderer3D } from './render/renderer3d.js';
 import { Scene3D } from './render/scene3d.js';
 import { RoadNetwork } from './model/network.js';
+import { DriveSim } from './model/driver.js';
 import { SnapEngine, snapToleranceFor } from './snap.js';
 import { createEmptyWorld } from './model/world.js';
 import { makeLayer } from './model/schema.js';
@@ -41,6 +42,7 @@ class App {
     this.tools = new ToolController(this);
     this.minimap = new Minimap(document.getElementById('minimap'), {
       getViewBox: () => this.viewBox(),
+      getAgents: () => this.drive?.list() || null,
       onJump: (x, y) => this.jumpTo(x, y),
     });
     this.needsDraw = true;
@@ -92,6 +94,8 @@ class App {
     this.history = new History(world);
     this.history.on('change', () => this.refreshHistoryButtons());
     this.network = new RoadNetwork(world);
+    this.drive = new DriveSim(world, this.network);
+    this.drive.sync();
     this.snap = new SnapEngine(world);
     this.scene3d = new Scene3D(world, this.network);
     this.renderer3d = new Renderer3D(this.canvas, world, this.scene3d);
@@ -108,6 +112,7 @@ class App {
     this.renderSidebars();
     this.refreshStatus();
     this.refreshHistoryButtons();
+    this.refreshTrafficStatus();
     this.updateWorldName();
     this.requestDraw();
     if (!silent) this.toast(`Loaded “${world.data.meta?.name || 'world'}”`, 'ok');
@@ -133,6 +138,7 @@ class App {
 
   afterEdit() {
     this.network.invalidate();
+    this.drive?.sync();
     this.scene3d.invalidate();
     this.markDirty();
     this.renderSidebars();
@@ -341,7 +347,7 @@ class App {
     if (this.mode === '3d') {
       this.renderer3d.setSelection(this.selection);
       this.renderer3d.setHovered(this.tools.hoverId);
-      return this.renderer3d.pickAt(this.camera3d, sx, sy);
+      return this.renderer3d.pickAt(this.camera3d, sx, sy, this.scene3d?.vehiclePrisms() ?? []);
     }
     return this.pick2d(sx, sy);
   }
@@ -539,8 +545,9 @@ class App {
       if (ev.key === '2') return this.setMode('2d');
       if (ev.key === '3') return this.setMode('3d');
       if (ev.key === 'f' || ev.key === 'F') return this.fitWorld();
+      if (ev.key === 'p' || ev.key === 'P') return this.toggleDrive();
       if (ev.key === 'Delete' || ev.key === 'Backspace') return;
-      const map = { v: 'select', r: 'road', j: 'junction', b: 'building', g: 'surface', o: 'prop', m: 'marking', d: 'measure' };
+      const map = { v: 'select', r: 'road', j: 'junction', b: 'building', g: 'surface', o: 'prop', m: 'marking', c: 'vehicle', d: 'measure' };
       const tool = map[ev.key.toLowerCase()];
       if (tool) {
         this.setTool(tool);
@@ -596,6 +603,8 @@ class App {
       ev.currentTarget.classList.toggle('on', on);
       this.requestDraw();
     });
+
+    document.getElementById('traffic-toggle').addEventListener('click', () => this.toggleDrive());
 
     document.getElementById('style-select').addEventListener('change', (ev) => {
       this.styleName = ev.target.value;
@@ -891,7 +900,7 @@ class App {
     const frame = (now) => {
       const dt = Math.min(64, now - last);
       last = now;
-      const animating = this.camera.update(dt) || this.camera3d.update(dt);
+      const animating = this.camera.update(dt) || this.camera3d.update(dt) || this.stepDrive(dt);
       this.minimap.draw();
       if (this.needsDraw || animating) {
         this.draw();
@@ -911,6 +920,45 @@ class App {
     requestAnimationFrame(frame);
   }
 
+  /** Run the traffic simulation, and refresh the readouts at a human pace. */
+  stepDrive(dt) {
+    const drive = this.drive;
+    if (!drive?.running) return false;
+    drive.update(dt);
+    this.driveTick = (this.driveTick || 0) + dt;
+    if (this.driveTick > 400) {
+      this.driveTick = 0;
+      this.markDirty();
+      this.refreshTrafficStatus();
+      if (this.selection.size) this.refreshInspector();
+    }
+    return true;
+  }
+
+  refreshTrafficStatus() {
+    const node = document.getElementById('traffic-status');
+    if (!node || !this.drive) return;
+    const stats = this.drive.stats();
+    node.textContent = this.drive.running
+      ? `Traffic ${stats.driving}/${stats.vehicles} driving · ${Math.round(stats.avgSpeed * 3.6)} kph avg`
+      : 'Traffic paused';
+    node.classList.toggle('live', this.drive.running);
+    const btn = document.getElementById('traffic-toggle');
+    if (btn) {
+      btn.textContent = this.drive.running ? 'Pause' : 'Drive';
+      btn.title = `${this.drive.running ? 'Pause' : 'Start'} the traffic simulation (P)`;
+      btn.classList.toggle('live', this.drive.running);
+    }
+  }
+
+  toggleDrive() {
+    if (!this.drive) return;
+    const running = this.drive.toggle();
+    this.refreshTrafficStatus();
+    this.requestDraw();
+    this.toast(running ? 'Traffic running' : 'Traffic paused', 'ok', 1400);
+  }
+
   draw() {
     if (!this.world) return;
     const style = STYLES[this.styleName] || STYLES.day;
@@ -922,6 +970,7 @@ class App {
         world: this.world,
         network: this.network,
         vehicle: this.vehicle || null,
+        agents: this.drive?.running ? this.drive.list() : this.drive?.list() || [],
         route: this.route || null,
         routeGoal: this.routeGoal || null,
         sensors: this.sensors || null,
@@ -935,7 +984,7 @@ class App {
     } else {
       this.renderer3d.setSelection(this.selection);
       this.renderer3d.setHovered(this.tools.hoverId);
-      this.renderer3d.render(this.camera3d);
+      this.renderer3d.render(this.camera3d, { dynamic: this.scene3d?.vehiclePrisms() ?? [] });
     }
   }
 

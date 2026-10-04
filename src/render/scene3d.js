@@ -1,6 +1,6 @@
 import { boundingBox, boxIntersects, norm } from '../core/geom.js';
 import { hexToRgb, shade } from '../core/util.js';
-import { PROP_KINDS, ROAD_CLASSES, SURFACE_KINDS } from '../model/schema.js';
+import { PROP_KINDS, ROAD_CLASSES, SURFACE_KINDS, VEHICLE_PRESETS } from '../model/schema.js';
 import { nodeClearance } from '../model/paint.js';
 import { laneBoundaryLines } from '../model/network.js';
 import { spriteVariant } from './sprites.js';
@@ -38,6 +38,25 @@ function rgb(hex) {
 
 function centroidCellKey(box) {
   return `${Math.floor((box.minX + box.maxX) / 2 / CELL)},${Math.floor((box.minY + box.maxY) / 2 / CELL)}`;
+}
+
+/** Flat quad footprint of a rotated rectangle, for ground shadows. */
+function quadPts(cx, cy, len, wid, rot) {
+  const c = Math.cos(rot);
+  const s = Math.sin(rot);
+  const half = len / 2;
+  const hw = wid / 2;
+  return [
+    [-half, -hw],
+    [half, -hw],
+    [half, hw],
+    [-half, hw],
+  ].map(([lx, ly]) => [cx + lx * c - ly * s, cy + lx * s + ly * c]);
+}
+
+function pushAll(dst, src) {
+  for (const p of src) dst.push(p);
+  return dst;
 }
 
 function pointCellKey(x, y) {
@@ -90,6 +109,64 @@ export class Scene3D {
       if (performance.now() - start > budgetMs) break;
     }
     this.stats = { cells: this.cells.size, pending, built: this.world.revision };
+  }
+
+  /**
+   * Vehicles move every frame, so they are not baked into the static cells.
+   * This builds their prisms on demand from live world positions.
+   */
+  vehiclePrims(vehicles = this.world.data.vehicles) {
+    const prims = [];
+    for (const v of vehicles) {
+      if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.yaw)) continue;
+      if (!this.layerVisible(v.layerId)) continue;
+      const preset = VEHICLE_PRESETS[v.kind] || VEHICLE_PRESETS.car;
+      const color = v.color || preset.color;
+      const len = v.length || preset.length;
+      const wid = v.width || preset.width;
+      const h = v.height || preset.height;
+      pushAll(prims, this.vehiclePrism(v, color, len, wid, h));
+    }
+    return prims;
+  }
+
+  /** One vehicle: ground shadow, lower body, cabin, and a windscreen face. */
+  vehiclePrism(v, color, len, wid, h) {
+    const out = [];
+    const wheel = h * 0.26;
+    if (this.shadows) {
+      out.push({
+        kind: 'poly',
+        sub: SUBLAYER.terrain,
+        pts: quadPts(v.x + h * 0.12, v.y + h * 0.1, len * 1.02, wid * 1.05, v.yaw).map(([x, y]) => [x, y, 0.014]),
+        color: [0, 0, 0],
+        alpha: 0.22,
+        lit: false,
+        shadow: true,
+        tag: 'shadow',
+        id: v.id,
+      });
+    }
+    pushAll(out, this.boxPrism(v.x, v.y, wheel * 0.55, len, wid, wheel, color, v.yaw, false, SUBLAYER.vehicle, 'vehicle', v.id));
+    // Cabin: shorter and set back, tapering to the roof like a greenhouse.
+    const boxy = v.kind === 'bus' || v.kind === 'truck';
+    const cabinLen = Math.max(1.2, len * (boxy ? 0.72 : 0.46));
+    const cabinWid = wid * (boxy ? 0.94 : 0.86);
+    const offset = boxy ? -len * 0.1 : len * 0.04;
+    const cabinX = v.x + Math.cos(v.yaw) * offset;
+    const cabinY = v.y + Math.sin(v.yaw) * offset;
+    const cabinH = Math.max(0.3, h - wheel * 1.1);
+    pushAll(
+      out,
+      this.boxPrism(cabinX, cabinY, wheel * 0.55 + wheel, cabinLen, cabinWid, cabinH, shade(color, 0.06), v.yaw, !boxy, SUBLAYER.vehicle, 'vehicle', v.id)
+    );
+    // Glass band so the cabin reads as windows from a distance.
+    const glass = '#2b3a44';
+    pushAll(
+      out,
+      this.boxPrism(cabinX, cabinY, wheel * 0.55 + wheel + cabinH * 0.35, cabinLen * 0.94, cabinWid + 0.02, cabinH * 0.34, glass, v.yaw, false, SUBLAYER.vehicle, 'vehicle', v.id)
+    );
+    return out;
   }
 
   gather(box) {
@@ -848,7 +925,7 @@ export class Scene3D {
     }
   }
 
-  boxPrism(cx, cy, z0, len, wid, h, color, rotation, taper = false) {
+  boxPrism(cx, cy, z0, len, wid, h, color, rotation, taper = false, sub = SUBLAYER.object, tag = 'prop', id = null) {
     const c = Math.cos(rotation);
     const s = Math.sin(rotation);
     const half = len / 2;
@@ -872,7 +949,7 @@ export class Scene3D {
       const nl = Math.hypot(nx, ny) || 1;
       out.push({
         kind: 'poly',
-        sub: SUBLAYER.object,
+        sub,
         pts: [
           [p.x, p.y, z0],
           [q.x, q.y, z0],
@@ -882,12 +959,13 @@ export class Scene3D {
         color: rgb(color),
         normal: [nx / nl, ny / nl, 0],
         alpha: 1,
-        tag: 'prop',
+        tag,
+        id,
       });
     }
     out.push({
       kind: 'poly',
-      sub: SUBLAYER.object,
+      sub,
       pts: [
         [topCorners[0].x, topCorners[0].y, z0 + h],
         [topCorners[1].x, topCorners[1].y, z0 + h],
@@ -897,7 +975,8 @@ export class Scene3D {
       color: rgb(shade(color, 0.1)),
       normal: [0, 0, 1],
       alpha: 1,
-      tag: 'prop',
+      tag,
+      id,
     });
     return out;
   }

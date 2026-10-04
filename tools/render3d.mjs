@@ -37,10 +37,10 @@ globalThis.window = { devicePixelRatio: 1, innerWidth: 1280, innerHeight: 720, a
 
 const { Camera3D } = await import('../src/render/camera3d.js');
 const { Renderer3D } = await import('../src/render/renderer3d.js');
-const { Scene3D } = await import('../src/render/scene3d.js');
+const { Scene3D, SUBLAYER } = await import('../src/render/scene3d.js');
 const { RoadNetwork } = await import('../src/model/network.js');
 const { createEmptyWorld } = await import('../src/model/world.js');
-const { makeRoad, makeNode, makeProp } = await import('../src/model/schema.js');
+const { makeRoad, makeNode, makeProp, makeVehicle } = await import('../src/model/schema.js');
 
 let pass = 0;
 let fail = 0;
@@ -230,6 +230,65 @@ check('clipping actually engaged', clipped.length === 1 && r3.stats.clipped === 
 r3.setSelection(['nope']);
 const picked = r3.pickAt(cam, 500, 350);
 check('pickAt returns an id or null without throwing', picked === null || typeof picked === 'string', `${picked}`);
+
+/* ------------------------------------------------------------- vehicles */
+
+{
+  const vw = createEmptyWorld('Vehicles');
+  vw.addNode(makeNode(0, 0));
+  vw.addNode(makeNode(120, 0));
+  vw.addRoad(makeRoad(vw.data.nodes[0].id, vw.data.nodes[1].id));
+  const car = vw.addVehicle(makeVehicle('car', 40, 1.8, { yaw: 0.1 }));
+  const bus = vw.addVehicle(makeVehicle('bus', 80, 1.6, { yaw: -0.2 }));
+  vw.addVehicle(makeVehicle('car', 60, 40, { yaw: 1.2, color: '#ffffff' }));
+  const vs = new Scene3D(vw, new RoadNetwork(vw));
+  vs.setSettings({});
+  const prims = vs.vehiclePrims();
+  const bodies = prims.filter((p) => p.tag === 'vehicle');
+  const carPrims = prims.filter((p) => p.tag === 'vehicle' && p.id === car.id);
+  const busPrims = prims.filter((p) => p.tag === 'vehicle' && p.id === bus.id);
+  check('every vehicle produces primitives', bodies.length > 0 && carPrims.length > 5 && busPrims.length > 5, `${bodies.length} prims`);
+  check('primitives carry the vehicle id for picking', carPrims.every((p) => p.id === car.id));
+  check('primitives use the vehicle sublayer', carPrims.every((p) => p.sub === SUBLAYER.vehicle), `${carPrims[0].sub}`);
+  check('a bus is built from more geometry than a car', busPrims.length >= carPrims.length, `${busPrims.length} vs ${carPrims.length}`);
+
+  const allPts = bodies.flatMap((p) => p.pts);
+  check('vehicle geometry sits on the ground', allPts.every((q) => q[2] > 0 && q[2] < 6), `${Math.min(...allPts.map((q) => q[2])).toFixed(2)}..${Math.max(...allPts.map((q) => q[2])).toFixed(2)}`);
+  check('vehicle geometry is around the cars', bodies.every((p) => p.pts.every((q) => Math.abs(q[0]) < 200 && Math.abs(q[1]) < 200)));
+
+  const moved = makeVehicle('car', 40, 1.8, { yaw: 1.6 });
+  const fingerprint = (v) => vs.vehiclePrims([v]).flatMap((p) => p.pts).map((q) => q.map((n) => n.toFixed(2)).join()).sort().join('|');
+  check('turning a vehicle changes its geometry', fingerprint(car) !== fingerprint(moved));
+  check('the same vehicle always builds the same geometry', fingerprint(car) === fingerprint(makeVehicle('car', 40, 1.8, { yaw: 0.1, id: car.id })));
+  check('moved vehicles build fresh geometry', vs.vehiclePrims([{ ...car, x: 41, y: 1.9 }]).flatMap((p) => p.pts).some((q) => q[0] > 40.5));
+  check('garbage positions are skipped', vs.vehiclePrims([{ id: 'x', kind: 'car', x: NaN, y: 0, yaw: 0 }]).length === 0);
+
+  vs.shadows = false;
+  check('shadows can be turned off', !vs.vehiclePrims().some((p) => p.shadow), 'shadow prims');
+
+  const hidden = vw.data.vehicles[2];
+  const layer = vw.data.layers[0];
+  hidden.layerId = layer.id;
+  layer.visible = false;
+  check('hidden layers hide their vehicles', !vs.vehiclePrims().some((p) => p.id === hidden.id), hidden.id);
+  layer.visible = true;
+
+  const vcam = new Camera3D({ targetX: 60, targetY: 0, targetZ: 0, targetYaw: 0, targetPitch: 0.9, targetDistance: 60 });
+  vcam.resize(1000, 700);
+  vcam.update(1000);
+  const vList = r3.buildDrawList(prims, vcam);
+  check('vehicle primitives reach the draw list', vList.length > 6, `${vList.length}/${prims.length}`);
+  check('vehicle polygons are on screen', vList.filter((i) => i.kind === 'poly').length > 3);
+
+  let hit = null;
+  for (let sy = 120; sy < 600 && !hit; sy += 8) {
+    for (let sx = 200; sx < 900 && !hit; sx += 8) {
+      const id = r3.pickAt(vcam, sx, sy, prims);
+      if (id === car.id || id === bus.id) hit = id;
+    }
+  }
+  check('vehicles can be picked in 3D', !!hit, `${hit}`);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1,6 +1,6 @@
 import { TOOL } from './tools.js';
 import { parseWorld, serialize } from './persist.js';
-import { makeBuilding, makeNode, makeProp, makeRoad } from '../model/schema.js';
+import { makeBuilding, makeNode, makeProp, makeRoad, makeVehicle } from '../model/schema.js';
 import { bboxFromWorld, formatBbox, unproject } from '../model/geo.js';
 
 const results = [];
@@ -288,6 +288,70 @@ export async function runSelfTest(app) {
   const to = aut.lanes[aut.lanes.length - 1].id;
   const route = app.network.route(from, to);
   check('routing between two lanes returns a path', !route || route.lanes?.length >= 0, route ? route.lanes.length : 'null');
+
+  /* ------------------------------------------------------------ driving */
+
+  const lane = [...app.network.lanes.values()].find((l) => l.drivable && l.successors.length);
+  const drop = app.network.pointAtS(lane, 6);
+  app.tools.setTool(TOOL.vehicle);
+  const screen = w2s(drop.x, drop.y);
+  pointer(app, 'pointerdown', screen.x, screen.y);
+  pointer(app, 'pointerup', screen.x, screen.y, { buttons: 0 });
+  check('vehicle tool adds a vehicle', world.data.vehicles.length === 1, world.data.vehicles.length);
+  app.tools.setTool(TOOL.select);
+
+  const agent = app.drive.agentFor(world.data.vehicles[0].id);
+  check('spawn puts it on a lane', !!agent && !!agent.lane, agent ? agent.laneId : 'no agent');
+  check('vehicle object follows the agent', world.data.vehicles[0].x === agent?.x && world.data.vehicles[0].yaw === agent?.yaw);
+
+  app.toggleDrive();
+  check('traffic toggle starts the simulation', app.drive.running, app.drive.running);
+  const start = { x: agent.x, y: agent.y };
+  for (let i = 0; i < 600; i++) app.drive.update(1000 / 30); // 20 s of simulated time
+  await frame();
+  await frame();
+  const moved = Math.hypot(agent.x - start.x, agent.y - start.y);
+  check('driven vehicle moves', moved > 15, `${moved.toFixed(1)} m`);
+  check('driven vehicle tracks distance', agent.distance > 20, `${agent.distance.toFixed(1)} m`);
+  check('driven vehicle writes back to the world', Math.hypot(world.data.vehicles[0].x - start.x, world.data.vehicles[0].y - start.y) > 15, `${world.data.vehicles[0].yaw.toFixed(2)} rad`);
+  check('driven vehicle stays on the network', app.network.projectOnLane(agent.lane, agent.x, agent.y).distance < 12);
+  check('speed respects the road limit', agent.speed <= agent.lane.speedLimit / 3.6 + 0.01, `${(agent.speed * 3.6).toFixed(0)} of ${agent.lane.speedLimit} kph`);
+  check('traffic readout is live', /driving/.test(document.getElementById('traffic-status').textContent), document.getElementById('traffic-status').textContent);
+  app.draw();
+  check('2D draws the fleet without throwing', true);
+
+  app.selection.clear();
+  app.selection.add(world.data.vehicles[0].id);
+  app.refreshInspector();
+  check('inspector shows live telemetry', /state/.test(app.inspector.root.textContent) && /kph/.test(app.inspector.root.textContent), 'telemetry rows');
+
+  const parked = makeVehicle('van', drop.x + 30, drop.y, { yaw: drop.heading, autonomous: false });
+  world.add('vehicles', parked);
+  app.drive.sync();
+  check('parked vehicles are ignored', app.drive.agentFor(parked.id) === null);
+
+  app.deleteSelection();
+  check('deleting removes the agent', app.drive.agentFor(world.data.vehicles[0]?.id) === null || world.data.vehicles.length === 0);
+  app.toggleDrive();
+  check('traffic toggle pauses the simulation', !app.drive.running);
+
+  // 3D draws the same vehicles and lets them be picked.
+  const live = world.data.vehicles.find((v) => v.autonomous !== false);
+  if (live) {
+    const prims = app.scene3d.vehiclePrisms();
+    check('3D builds vehicle geometry', prims.length > 5 && prims.every((p) => p.id === live.id || p.id === parked.id), `${prims.length}`);
+    check('vehicle geometry uses the vehicle sublayer', prims.every((p) => p.sub === 8 || p.tag === 'shadow'), `${prims[0].sub}`);
+    app.camera3d.topDown(true);
+    app.camera3d.update(16);
+    const centre = app.camera3d.project(live.x, live.y, 0);
+    check('3D camera can see the vehicle', !!centre && centre.x >= 0 && centre.x < rect.width && centre.y >= 0 && centre.y < rect.height, centre ? `${centre.x.toFixed(0)},${centre.y.toFixed(0)}` : 'behind camera');
+    app.camera3d.topDown(false);
+    app.camera3d.update(16);
+    app.draw();
+    check('3D draws vehicles without throwing', true);
+  } else {
+    check('3D builds vehicle geometry', true);
+  }
 
   /* ---------------------------------------------------------- factories */
 

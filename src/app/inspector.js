@@ -10,6 +10,8 @@ import {
   ROAD_CLASS_ORDER,
   ROOF_TYPES,
   SURFACE_KINDS,
+  VEHICLE_PRESETS,
+  VEHICLE_PRESET_ORDER,
   roadClassInfo,
 } from '../model/schema.js';
 import { bboxFromWorld, formatBbox, latLonString, unproject } from '../model/geo.js';
@@ -83,6 +85,61 @@ export class Inspector {
       ])
     );
     replace(this.root, body);
+  }
+
+  /**
+   * Live telemetry for a driven vehicle. Re-rendered by the app while the
+   * simulation runs, so it reads state rather than settings.
+   */
+  driveGroup(o) {
+    const app = this.app;
+    const drive = app.drive;
+    const agent = drive?.agentFor(o.id);
+    if (!drive) {
+      return this.group('Driving', [el('div', { class: 'note', text: 'Traffic is not running in this world.' })]);
+    }
+    const rows = [];
+    if (!agent) {
+      rows.push(el('div', { class: 'note', text: agent === null ? 'No simulation agent yet.' : 'Not driving.' }));
+    } else {
+      const stat = (k, v) => el('div', { class: 'stat' }, [el('span', { text: k }), el('b', { text: v })]);
+      rows.push(stat('state', agent.state || '—'));
+      if (agent.reason) rows.push(stat('because', agent.reason));
+      rows.push(stat('speed', `${Math.round(agent.speed * 3.6)} kph`));
+      rows.push(stat('along lane', `${Math.round(agent.s)} / ${Math.round(agent.lane.length)} m`));
+      rows.push(stat('distance', `${Math.round(agent.distance)} m`));
+      if (agent.signal) rows.push(stat('signal', agent.signal));
+      if (agent.laneId) rows.push(stat('lane', agent.laneId));
+    }
+    rows.push(
+      el('div', { class: 'row' }, [
+        el('button', {
+          class: 'btn',
+          text: drive.running ? 'Pause traffic' : 'Start traffic',
+          onclick: () => app.toggleDrive(),
+        }),
+        el('button', {
+          class: 'btn',
+          text: 'Re-drop here',
+          title: 'Put the vehicle back on the nearest lane from where it now sits',
+          onclick: () => {
+            const agent = drive.agentFor(o.id);
+            if (!agent) {
+              app.toast('This vehicle is not being driven', 'warn');
+              return;
+            }
+            if (!app.network?.nearestLane(o.x, o.y)) {
+              app.toast('No road nearby', 'warn');
+              return;
+            }
+            drive.place(agent, o.x, o.y, o.yaw);
+            app.requestDraw();
+            app.refreshInspector();
+          },
+        }),
+      ])
+    );
+    return this.group('Driving', rows);
   }
 
   renderOne(found) {
@@ -243,6 +300,19 @@ export class Inspector {
         ])
       );
       out.push(this.group('Position', [field('x (m)', input(round(o.x, 3), (v) => patch({ x: num(v, o.x) }), { type: 'number', step: 0.1 })), field('y (m)', input(round(o.y, 3), (v) => patch({ y: num(v, o.y) }), { type: 'number', step: 0.1 })), this.geoRow(o.x, o.y)]));
+    }
+
+    if (type === 'vehicles') {
+      const preset = VEHICLE_PRESETS[o.kind] || {};
+      out.push(
+        this.group('Vehicle', [
+          field('kind', select(o.kind, VEHICLE_PRESET_ORDER, (v) => patch({ ...VEHICLE_PRESETS[v], kind: v }))),
+          field('autonomous', checkbox(o.autonomous !== false, (v) => patch({ autonomous: v }))),
+          field('color', el('input', { type: 'color', value: o.color || preset.color || '#c9433f', oninput: (e) => patch({ color: e.target.value }) })),
+          field('max speed', input(o.maxSpeed ?? preset.maxSpeed, (v) => patch({ maxSpeed: num(v, preset.maxSpeed) }), { type: 'number', min: 5, max: 200, step: 1, title: 'kph' })),
+        ])
+      );
+      out.push(this.driveGroup(o));
     }
 
     out.push(this.layerField(found));

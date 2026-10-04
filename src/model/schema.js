@@ -148,12 +148,21 @@ export const BUILDING_KINDS = {
 export const BUILDING_KIND_ORDER = Object.keys(BUILDING_KINDS);
 
 export const VEHICLE_PRESETS = {
-  car: { label: 'Passenger car', wheelbase: 2.7, width: 1.85, length: 4.6, height: 1.48, maxSteer: 0.62, maxSpeed: 55, accel: 3.2, brake: 9, drag: 0.42 },
-  van: { label: 'Delivery van', wheelbase: 3.2, width: 2.0, length: 5.6, height: 2.4, maxSteer: 0.55, maxSpeed: 45, accel: 2.4, brake: 8, drag: 0.6 },
-  truck: { label: 'Box truck', wheelbase: 4.4, width: 2.5, length: 9.0, height: 3.3, maxSteer: 0.45, maxSpeed: 32, accel: 1.6, brake: 6, drag: 1.1 },
-  bus: { label: 'City bus', wheelbase: 5.8, width: 2.55, length: 11.5, height: 3.2, maxSteer: 0.42, maxSpeed: 28, accel: 1.4, brake: 6, drag: 1.3 },
-  sports: { label: 'Sports car', wheelbase: 2.6, width: 1.9, length: 4.4, height: 1.24, maxSteer: 0.66, maxSpeed: 72, accel: 6.5, brake: 14, drag: 0.34 },
+  car: { label: 'Passenger car', wheelbase: 2.7, width: 1.85, length: 4.6, height: 1.48, maxSteer: 0.62, maxSpeed: 55, accel: 3.2, brake: 9, drag: 0.42, color: '#c9433f' },
+  van: { label: 'Delivery van', wheelbase: 3.2, width: 2.0, length: 5.6, height: 2.4, maxSteer: 0.55, maxSpeed: 45, accel: 2.4, brake: 8, drag: 0.6, color: '#dfe3e8' },
+  truck: { label: 'Box truck', wheelbase: 4.4, width: 2.5, length: 9.0, height: 3.3, maxSteer: 0.45, maxSpeed: 32, accel: 1.6, brake: 6, drag: 1.1, color: '#3f6ea8' },
+  bus: { label: 'City bus', wheelbase: 5.8, width: 2.55, length: 11.5, height: 3.2, maxSteer: 0.42, maxSpeed: 28, accel: 1.4, brake: 6, drag: 1.3, color: '#4a9e7a' },
+  sports: { label: 'Sports car', wheelbase: 2.6, width: 1.9, length: 4.4, height: 1.24, maxSteer: 0.66, maxSpeed: 72, accel: 6.5, brake: 14, drag: 0.34, color: '#e0a12c' },
 };
+
+export const VEHICLE_PRESET_ORDER = Object.keys(VEHICLE_PRESETS);
+
+export function vehiclePreset(kind) {
+  return VEHICLE_PRESETS[kind] || VEHICLE_PRESETS.car;
+}
+
+/** Body colours handed out in rotation so a fleet is easy to tell apart. */
+export const VEHICLE_FLEET_COLORS = ['#c9433f', '#3f6ea8', '#4a9e7a', '#e0a12c', '#8a5cc4', '#2f8f9e', '#dfe3e8', '#b8563f'];
 
 export const LAYER_DEFAULTS = [
   { key: 'buildings', name: 'Buildings', locked: false },
@@ -241,6 +250,35 @@ export function makeProp(kind, x, y, extra = {}) {
     color: extra.color ?? preset.color,
     height: extra.height ?? preset.height,
     linkedNode: extra.linkedNode ?? null,
+    tags: extra.tags ?? {},
+  };
+}
+
+/**
+ * A drivable vehicle. Unlike a parked prop it carries its own handling model,
+ * so the self-driving simulator can steer it without looking the kind up again.
+ */
+export function makeVehicle(kind, x, y, extra = {}) {
+  const preset = vehiclePreset(kind);
+  return {
+    id: uid('v'),
+    layerId: null,
+    kind: VEHICLE_PRESETS[kind] ? kind : 'car',
+    x,
+    y,
+    z: extra.z ?? 0,
+    yaw: extra.yaw ?? 0,
+    color: extra.color ?? preset.color,
+    autonomous: extra.autonomous !== false,
+    wheelbase: extra.wheelbase ?? preset.wheelbase,
+    width: extra.width ?? preset.width,
+    length: extra.length ?? preset.length,
+    height: extra.height ?? preset.height,
+    maxSteer: extra.maxSteer ?? preset.maxSteer,
+    maxSpeed: extra.maxSpeed ?? preset.maxSpeed,
+    accel: extra.accel ?? preset.accel,
+    brake: extra.brake ?? preset.brake,
+    drag: extra.drag ?? preset.drag,
     tags: extra.tags ?? {},
   };
 }

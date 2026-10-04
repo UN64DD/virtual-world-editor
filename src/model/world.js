@@ -5,6 +5,7 @@ import { makeOrigin, refreshOrigin } from './geo.js';
 import {
   LAYER_DEFAULTS,
   ROAD_CLASSES,
+  VEHICLE_PRESETS,
   WORLD_FORMAT,
   WORLD_VERSION,
   makeLayer,
@@ -18,6 +19,7 @@ export const COLLECTIONS = [
   { key: 'buildings', label: 'Building', singular: 'building', order: 3 },
   { key: 'surfaces', label: 'Surface', singular: 'surface', order: 4 },
   { key: 'props', label: 'Object', singular: 'prop', order: 5 },
+  { key: 'vehicles', label: 'Vehicle', singular: 'vehicle', order: 6 },
 ];
 
 export const COLLECTION_BY_KEY = new Map(COLLECTIONS.map((c) => [c.key, c]));
@@ -384,6 +386,20 @@ export class World extends Emitter {
         o.sidewalk = info.access !== 'foot';
       }
     }
+    if (found.type === 'vehicles' && o.kind !== undefined && patch.wheelbase === undefined) {
+      const preset = VEHICLE_PRESETS[o.kind];
+      if (preset) {
+        o.wheelbase = preset.wheelbase;
+        o.width = preset.width;
+        o.length = preset.length;
+        o.height = preset.height;
+        o.maxSteer = preset.maxSteer;
+        o.maxSpeed = preset.maxSpeed;
+        o.accel = preset.accel;
+        o.brake = preset.brake;
+        o.drag = preset.drag;
+      }
+    }
     return o;
   }
 
@@ -479,6 +495,10 @@ export class World extends Emitter {
       case 'props': {
         const r = Math.max(0.6, (obj.height || 1) * 0.35);
         return { minX: obj.x - r, minY: obj.y - r, maxX: obj.x + r, maxY: obj.y + r };
+      }
+      case 'vehicles': {
+        const half = Math.max(obj.length || 4.6, obj.width || 1.85) / 2 + 0.4;
+        return { minX: obj.x - half, minY: obj.y - half, maxX: obj.x + half, maxY: obj.y + half };
       }
       case 'buildings':
       case 'surfaces':
@@ -624,7 +644,8 @@ export class World extends Emitter {
       for (const obj of this.data[c.key]) {
         if (obj.layerId && !layerIds.has(obj.layerId)) obj.layerId = null;
         if (!obj.layerId) {
-          const def = LAYER_DEFAULTS.find((d) => d.key === c.key);
+          const key = (LAYER_DEFAULTS.find((d) => d.key === c.key) || { key: DEFAULT_LAYER_KEY[c.key] }).key;
+          const def = LAYER_DEFAULTS.find((d) => d.key === key);
           if (def) obj.layerId = this.defaultLayerId(def.key);
         }
       }
@@ -669,6 +690,10 @@ export class World extends Emitter {
     for (const p of this.data.props) {
       p.x += dx;
       p.y += dy;
+    }
+    for (const v of this.data.vehicles) {
+      v.x += dx;
+      v.y += dy;
     }
     this.touch(true);
   }
