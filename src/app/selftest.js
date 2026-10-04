@@ -1,6 +1,7 @@
 import { TOOL } from './tools.js';
 import { parseWorld, serialize } from './persist.js';
 import { makeBuilding, makeNode, makeProp, makeRoad, makeVehicle } from '../model/schema.js';
+import { buildVehiclePrims } from '../render/scene3d.js';
 import { bboxFromWorld, formatBbox, unproject } from '../model/geo.js';
 
 const results = [];
@@ -306,6 +307,8 @@ export async function runSelfTest(app) {
 
   app.toggleDrive();
   check('traffic toggle starts the simulation', app.drive.running, app.drive.running);
+  const driveBtn = document.getElementById('traffic-toggle');
+  check('traffic button reflects the running state', driveBtn?.textContent === 'Pause' && driveBtn.classList.contains('live'), `${driveBtn?.textContent} live=${driveBtn?.classList.contains('live')}`);
   const start = { x: agent.x, y: agent.y };
   for (let i = 0; i < 600; i++) app.drive.update(1000 / 30); // 20 s of simulated time
   await frame();
@@ -324,6 +327,15 @@ export async function runSelfTest(app) {
   app.selection.add(world.data.vehicles[0].id);
   app.refreshInspector();
   check('inspector shows live telemetry', /state/.test(app.inspector.root.textContent) && /kph/.test(app.inspector.root.textContent), 'telemetry rows');
+  check('inspector offers a driving control', [...app.inspector.root.querySelectorAll('button')].some((b) => /traffic|drop/i.test(b.textContent)), 'buttons');
+  const redrop = [...app.inspector.root.querySelectorAll('button')].find((b) => /drop here/i.test(b.textContent));
+  if (redrop) {
+    redrop.click();
+    const back = app.drive.agentFor(world.data.vehicles[0].id);
+    check('re-drop puts the vehicle back on its lane', !!back && back.lane != null && app.network.projectOnLane(back.lane, back.x, back.y).distance < 12, back ? back.laneId : 'no agent');
+  } else {
+    check('re-drop puts the vehicle back on its lane', false, 'no re-drop button');
+  }
 
   const parked = makeVehicle('van', drop.x + 30, drop.y, { yaw: drop.heading, autonomous: false });
   world.add('vehicles', parked);
@@ -334,6 +346,7 @@ export async function runSelfTest(app) {
   check('deleting removes the agent', app.drive.agentFor(world.data.vehicles[0]?.id) === null || world.data.vehicles.length === 0);
   app.toggleDrive();
   check('traffic toggle pauses the simulation', !app.drive.running);
+  check('traffic button returns to Drive', driveBtn?.textContent === 'Drive' && !driveBtn.classList.contains('live'), `${driveBtn?.textContent}`);
 
   // 3D draws the same vehicles and lets them be picked.
   const live = world.data.vehicles.find((v) => v.autonomous !== false);

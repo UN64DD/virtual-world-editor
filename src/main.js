@@ -4,7 +4,7 @@ import { STYLES } from './render/theme.js';
 import { Renderer2D } from './render/renderer2d.js';
 import { Camera3D } from './render/camera3d.js';
 import { Renderer3D } from './render/renderer3d.js';
-import { Scene3D } from './render/scene3d.js';
+import { Scene3D, buildVehiclePrims } from './render/scene3d.js';
 import { RoadNetwork } from './model/network.js';
 import { DriveSim } from './model/driver.js';
 import { SnapEngine, snapToleranceFor } from './snap.js';
@@ -347,7 +347,7 @@ class App {
     if (this.mode === '3d') {
       this.renderer3d.setSelection(this.selection);
       this.renderer3d.setHovered(this.tools.hoverId);
-      return this.renderer3d.pickAt(this.camera3d, sx, sy, this.scene3d?.vehiclePrisms() ?? []);
+      return this.renderer3d.pickAt(this.camera3d, sx, sy, this.vehiclePrims3d());
     }
     return this.pick2d(sx, sy);
   }
@@ -984,8 +984,14 @@ class App {
     } else {
       this.renderer3d.setSelection(this.selection);
       this.renderer3d.setHovered(this.tools.hoverId);
-      this.renderer3d.render(this.camera3d, { dynamic: this.scene3d?.vehiclePrisms() ?? [] });
+      const dynamicVehicles = this.vehiclePrisms3d();
+      this.renderer3d.render(this.camera3d, { dynamic: dynamicVehicles });
     }
+  }
+
+  /** Vehicle primitives for the 3D renderer, rebuilt from live positions. */
+  vehiclePrisms3d() {
+    return this.scene3d ? buildVehiclePrims(this.scene3d) : [];
   }
 
   updatePerf() {

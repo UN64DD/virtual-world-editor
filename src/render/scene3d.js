@@ -116,18 +116,7 @@ export class Scene3D {
    * This builds their prisms on demand from live world positions.
    */
   vehiclePrims(vehicles = this.world.data.vehicles) {
-    const prims = [];
-    for (const v of vehicles) {
-      if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.yaw)) continue;
-      if (!this.layerVisible(v.layerId)) continue;
-      const preset = VEHICLE_PRESETS[v.kind] || VEHICLE_PRESETS.car;
-      const color = v.color || preset.color;
-      const len = v.length || preset.length;
-      const wid = v.width || preset.width;
-      const h = v.height || preset.height;
-      pushAll(prims, this.vehiclePrism(v, color, len, wid, h));
-    }
-    return prims;
+    return buildVehiclePrims(this, vehicles);
   }
 
   /** One vehicle: ground shadow, lower body, cabin, and a windscreen face. */
@@ -986,6 +975,26 @@ export class Scene3D {
     const layer = this.world.layerById(layerId);
     return layer ? layer.visible : true;
   }
+}
+
+/**
+ * Vehicle prisms for the 3D renderer, rebuilt from live world positions every
+ * frame. Exported as a plain function so callers do not depend on method
+ * dispatch through the scene object.
+ */
+export function buildVehiclePrims(scene, vehicles = scene.world.data.vehicles) {
+  const prims = [];
+  for (const v of vehicles) {
+    if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.yaw)) continue;
+    if (!scene.layerVisible(v.layerId)) continue;
+    const preset = VEHICLE_PRESETS[v.kind] || VEHICLE_PRESETS.car;
+    const color = v.color || preset.color;
+    const len = v.length || preset.length;
+    const wid = v.width || preset.width;
+    const h = v.height || preset.height;
+    pushAll(prims, scene.vehiclePrism(v, color, len, wid, h));
+  }
+  return prims;
 }
 
 function wallTone(b) {
